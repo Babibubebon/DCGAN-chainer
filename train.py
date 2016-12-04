@@ -30,18 +30,18 @@ class Dataset(chainer.datasets.ImageDataset):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Chainer example: MNIST')
+    parser = argparse.ArgumentParser(description='DCGAN with chainer')
     parser.add_argument('--batchsize', '-b', type=int, default=100,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--epoch', '-e', type=int, default=20,
+    parser.add_argument('--epoch', '-e', type=int, default=1000,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
     parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
-    parser.add_argument('--initmodel', '-m', default='',
+    parser.add_argument('--initmodel', '-m', default='', nargs=2,
                         help='Initialize the model from given file')
-    parser.add_argument('--resume', '-r', default='',
+    parser.add_argument('--resume', '-r', default='', nargs=2,
                         help='Resume the optimization from snapshot')
     parser.add_argument('image_dir', default='images', help='Directory of training data')
     args = parser.parse_args()
@@ -82,10 +82,12 @@ def main():
     # Init/Resume
     if args.initmodel:
         print('Load model from', args.initmodel)
-        serializers.load_npz(args.initmodel, G)
+        serializers.load_npz(args.initmodel[0], G)
+        serializers.load_npz(args.initmodel[1], D)
     if args.resume:
         print('Load optimizer state from', args.resume)
-        serializers.load_npz(args.resume, G_optimizer)
+        serializers.load_npz(args.resume[0], G_optimizer)
+        serializers.load_npz(args.resume[1], D_optimizer)
 
     # Load dataset
     files = os.listdir(args.image_dir)
@@ -99,13 +101,15 @@ def main():
         sum_D_loss = 0
 
         for data in dataset_iter:
-            print(dataset_iter.epoch_detail)
+            #print(dataset_iter.epoch_detail)
+            batchsize = len(data)
+
             # train generator
-            z = Variable(xp.random.uniform(-1, 1, (args.batchsize, nz)).astype(np.float32))
+            z = Variable(xp.random.uniform(-1, 1, (batchsize, nz)).astype(np.float32))
             x = G(z)
             p_g = D(x)
 
-            G_loss = F.sigmoid_cross_entropy(p_g, Variable(xp.ones((args.batchsize, 1), dtype=np.int32)))
+            G_loss = F.sigmoid_cross_entropy(p_g, Variable(xp.ones((batchsize, 1), dtype=np.int32)))
             G.cleargrads()
             G_loss.backward()
             G_optimizer.update()
@@ -116,29 +120,29 @@ def main():
             else:
                 p_real = D(Variable(np.array(data)))
 
-            D_loss = F.sigmoid_cross_entropy(p_real, Variable(xp.ones((len(p_real.data), 1), dtype=np.int32)))
-            D_loss += F.sigmoid_cross_entropy(p_g, Variable(xp.zeros((len(p_g.data), 1), dtype=np.int32)))
+            D_loss = F.sigmoid_cross_entropy(p_real, Variable(xp.ones((batchsize, 1), dtype=np.int32)))
+            D_loss += F.sigmoid_cross_entropy(p_g, Variable(xp.zeros((batchsize, 1), dtype=np.int32)))
             D.cleargrads()
             D_loss.backward()
             D_optimizer.update()
 
-            sum_G_loss += G_loss.data
-            sum_D_loss += G_loss.data
+            sum_G_loss += G_loss.data * len(data)
+            sum_D_loss += D_loss.data * len(data)
 
-            print('generator loss     : {}'.format(G_loss.data))
-            print('discriminator loss : {}'.format(D_loss.data))
+        print('generator loss     : {}'.format(sum_G_loss / len(dataset)))
+        print('discriminator loss : {}'.format(sum_D_loss / len(dataset)))
 
-            # output image
-            z = Variable(xp.random.uniform(-1, 1, (1, nz)).astype(np.float32))
-            x = G(z, test=True)
-            tmp = chainer.cuda.to_cpu(x.data[0])
-            func = np.vectorize(lambda x: np.float32(-1 if x < -1 else (1 if x > 1 else x)))
-            tmp = (func(tmp) + 1) * 128
-            img = tmp.astype(np.uint8).transpose(1, 2, 0)
-            Image.fromarray(img).save("out.png")
+        # output image
+        z = Variable(xp.random.uniform(-1, 1, (1, nz)).astype(np.float32))
+        x = G(z, test=True)
+        tmp = chainer.cuda.to_cpu(x.data[0])
+        func = np.vectorize(lambda x: np.float32(-1 if x < -1 else (1 if x > 1 else x)))
+        tmp = (func(tmp) + 1) * 128
+        img = tmp.astype(np.uint8).transpose(1, 2, 0)
+        Image.fromarray(img).save("out.png")
 
-            serializers.save_npz(os.path.join(args.out, 'generator_{}.model'.format(epoch)), G)
-            serializers.save_npz(os.path.join(args.out, 'discriminator_{}.model'.format(epoch)), D)
+        serializers.save_npz(os.path.join(args.out, 'generator_{}.model'.format(epoch)), G)
+        serializers.save_npz(os.path.join(args.out, 'discriminator_{}.model'.format(epoch)), D)
 
 if __name__ == '__main__':
     main()

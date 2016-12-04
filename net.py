@@ -3,7 +3,6 @@ import math
 import chainer
 import chainer.functions as F
 import chainer.links as L
-from chainer import Variable
 
 class Generator(chainer.Chain):
     def __init__(self, n_in):

@@ -15,18 +15,23 @@ from net import Generator, Discriminator
 
 nz = 100          # # of dim for Z
 
+
 class Dataset(chainer.datasets.ImageDataset):
     def get_example(self, i):
         path = os.path.join(self._root, self._paths[i])
         f = Image.open(path).convert('RGB')
-        image = np.asarray(f, dtype=np.float32).transpose(2, 0, 1)
+        return self.preprocess(f)
 
+    def preprocess(self, image):
+        cimg = np.asarray(image, dtype=np.float32).transpose(2, 0, 1)
         rnd = np.random.randint(2)
         if rnd == 1:
-            image = image[:,:,::-1]
+            # flip
+            cimg = cimg[:,:,::-1]
 
-        image = (image - 128.0) / 128.0
-        return image
+        # normalize
+        cimg = (cimg - 128.0) / 128.0
+        return cimg
 
 
 def main():

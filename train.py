@@ -10,6 +10,8 @@ import chainer.functions as F
 import chainer.links as L
 from chainer import Variable
 from chainer import serializers
+from chainer import training
+from chainer.training import extensions
 
 from net import Generator, Discriminator
 
@@ -33,6 +35,20 @@ class Dataset(chainer.datasets.ImageDataset):
         cimg = (cimg - 128.0) / 128.0
         return cimg
 
+class DCGANUpdater(chainer.training.StandardUpdater):
+    def update_core(self):
+        x_batch = self.converter(self._iterators['main'].next(), self.device)
+        z_batch = self.converter(np.random.uniform(-1, 1, (len(x_batch), nz)).astype(np.float32), self.device)
+
+        G_optimizer = self._optimizers['generator']
+        D_optimizer = self._optimizers['discriminator']
+
+        G_loss_func = G_optimizer.target.get_loss_func(D_optimizer.target)
+        D_loss_func = D_optimizer.target.get_loss_func(G_optimizer.target)
+
+        G_optimizer.update(G_loss_func, Variable(z_batch))
+        D_optimizer.update(D_loss_func, Variable(x_batch), Variable(z_batch))
+
 
 def main():
     parser = argparse.ArgumentParser(description='DCGAN with chainer')
@@ -46,9 +62,10 @@ def main():
                         help='Directory to output the result')
     parser.add_argument('--initmodel', '-m', default='', nargs=2,
                         help='Initialize the model from given file')
-    parser.add_argument('--resume', '-r', default='', nargs=2,
+    parser.add_argument('--resume', '-r', default='',
                         help='Resume the optimization from snapshot')
     parser.add_argument('image_dir', default='images', help='Directory of training data')
+    parser.add_argument('--test', action='store_true', default=False)
     args = parser.parse_args()
 
     print('GPU: {}'.format(args.gpu))
@@ -59,10 +76,6 @@ def main():
     # check paths
     if not os.path.exists(args.image_dir):
         sys.exit('image_dir does not exist.')
-    try:
-        os.mkdir(args.out)
-    except:
-        pass
 
     # Set up a neural network to train
     G = Generator(nz)
@@ -75,8 +88,8 @@ def main():
     xp = np if args.gpu < 0 else chainer.cuda.cupy
 
     # Setup an optimizer
-    G_optimizer = chainer.optimizers.Adam(alpha=2e-4, beta1=0.5)
-    D_optimizer = chainer.optimizers.Adam(alpha=2e-4, beta1=0.5)
+    G_optimizer = chainer.optimizers.Adam(alpha=1e-4, beta1=0.5)
+    D_optimizer = chainer.optimizers.Adam(alpha=1e-4, beta1=0.5)
     G_optimizer.use_cleargrads()
     D_optimizer.use_cleargrads()
     G_optimizer.setup(G)
@@ -89,65 +102,38 @@ def main():
         print('Load model from', args.initmodel)
         serializers.load_npz(args.initmodel[0], G)
         serializers.load_npz(args.initmodel[1], D)
-    if args.resume:
-        print('Load optimizer state from', args.resume)
-        serializers.load_npz(args.resume[0], G_optimizer)
-        serializers.load_npz(args.resume[1], D_optimizer)
 
     # Load dataset
     files = os.listdir(args.image_dir)
     dataset = Dataset(files, args.image_dir)
+    dataset_iter = chainer.iterators.SerialIterator(dataset, args.batchsize)
 
-    for epoch in range(1, args.epoch + 1):
-        print('epoch', epoch)
-        dataset_iter = chainer.iterators.SerialIterator(dataset, args.batchsize, repeat=False)
+    # Set up a trainer
+    optimizers = {'generator': G_optimizer, 'discriminator': D_optimizer}
+    updater = DCGANUpdater(dataset_iter, optimizers, device=args.gpu)
+    trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
-        sum_G_loss = 0
-        sum_D_loss = 0
+    log_interval = (10, 'iteration') if args.test else (1, 'epoch')
 
-        for data in dataset_iter:
-            #print(dataset_iter.epoch_detail)
-            batchsize = len(data)
+    #trainer.extend(extensions.snapshot(), trigger=log_interval)
+    trainer.extend(extensions.snapshot_object(
+        G, 'generator_iter_{.updater.iteration}'), trigger=log_interval)
+    trainer.extend(extensions.snapshot_object(
+        D, 'discriminator_iter_{.updater.iteration}'), trigger=log_interval)
 
-            # train generator
-            z = Variable(xp.random.uniform(-1, 1, (batchsize, nz)).astype(np.float32))
-            x = G(z)
-            p_g = D(x)
+    trainer.extend(extensions.LogReport(trigger=log_interval))
+    trainer.extend(extensions.PrintReport(
+        ['epoch', 'iteration', 'generator/loss', 'discriminator/loss', 'elapsed_time']), trigger=log_interval)
+    trainer.extend(extensions.ProgressBar(update_interval=20))
+    
 
-            G_loss = F.sigmoid_cross_entropy(p_g, Variable(xp.ones((batchsize, 1), dtype=np.int32)))
-            G.cleargrads()
-            G_loss.backward()
-            G_optimizer.update()
+    if args.resume:
+        # Resume from a snapshot
+        chainer.serializers.load_npz(args.resume, trainer)
 
-            # train discriminator
-            if args.gpu >= 0:
-                p_real = D(Variable(chainer.cuda.to_gpu(data)))
-            else:
-                p_real = D(Variable(np.array(data)))
+    # Run the training
+    trainer.run()
 
-            D_loss = F.sigmoid_cross_entropy(p_real, Variable(xp.ones((batchsize, 1), dtype=np.int32)))
-            D_loss += F.sigmoid_cross_entropy(p_g, Variable(xp.zeros((batchsize, 1), dtype=np.int32)))
-            D.cleargrads()
-            D_loss.backward()
-            D_optimizer.update()
-
-            sum_G_loss += G_loss.data * len(data)
-            sum_D_loss += D_loss.data * len(data)
-
-        print('generator loss     : {}'.format(sum_G_loss / len(dataset)))
-        print('discriminator loss : {}'.format(sum_D_loss / len(dataset)))
-
-        # output image
-        z = Variable(xp.random.uniform(-1, 1, (1, nz)).astype(np.float32))
-        x = G(z, test=True)
-        tmp = chainer.cuda.to_cpu(x.data[0])
-        func = np.vectorize(lambda x: np.float32(-1 if x < -1 else (1 if x > 1 else x)))
-        tmp = (func(tmp) + 1) * 128
-        img = tmp.astype(np.uint8).transpose(1, 2, 0)
-        Image.fromarray(img).save("out.png")
-
-        serializers.save_npz(os.path.join(args.out, 'generator_{}.model'.format(epoch)), G)
-        serializers.save_npz(os.path.join(args.out, 'discriminator_{}.model'.format(epoch)), D)
 
 if __name__ == '__main__':
     main()

@@ -71,7 +71,6 @@ def main():
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
     print('# epoch: {}'.format(args.epoch))
-    print('')
 
     # check paths
     if not os.path.exists(args.image_dir):
@@ -97,7 +96,7 @@ def main():
     G_optimizer.add_hook(chainer.optimizer.WeightDecay(1e-5))
     D_optimizer.add_hook(chainer.optimizer.WeightDecay(1e-5))
 
-    # Init/Resume
+    # Init models
     if args.initmodel:
         print('Load model from', args.initmodel)
         serializers.load_npz(args.initmodel[0], G)
@@ -107,6 +106,7 @@ def main():
     files = os.listdir(args.image_dir)
     dataset = Dataset(files, args.image_dir)
     dataset_iter = chainer.iterators.SerialIterator(dataset, args.batchsize)
+    print('# samples: {}'.format(len(dataset)))
 
     # Set up a trainer
     optimizers = {'generator': G_optimizer, 'discriminator': D_optimizer}

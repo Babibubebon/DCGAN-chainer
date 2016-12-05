@@ -124,14 +124,15 @@ def main():
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
     log_interval = (10, 'iteration') if args.test else (1, 'epoch')
+    suffix = '_{0}_{{.updater.{0}}}'.format(log_interval[1])
 
     trainer.extend(extensions.snapshot(
-        filename='gen_epoch_{.updater.epoch}'), trigger=log_interval)
+        filename='snapshot' + suffix), trigger=log_interval)
     trainer.extend(extensions.snapshot_object(
-        G, 'gen_epoch_{.updater.epoch}'), trigger=log_interval)
+        G, 'gen' + suffix), trigger=log_interval)
     trainer.extend(extensions.snapshot_object(
-        D, 'dis_epoch_{.updater.epoch}'), trigger=log_interval)
-    trainer.extend(ext_output_samples(10), trigger=log_interval)
+        D, 'dis' + suffix), trigger=log_interval)
+    trainer.extend(ext_output_samples(10, 'samples' + suffix), trigger=log_interval)
 
     trainer.extend(extensions.LogReport(trigger=log_interval))
     trainer.extend(extensions.PrintReport(

@@ -17,14 +17,14 @@ ndf = 64
 nc = 3
 size = 64
 
-def generate_image(G, vec):
-    x = G(vec, test=True)
+def generate_image(G, z):
+    x = G(z, test=True)
     x = chainer.cuda.to_cpu(x.data)
     x = (np.clip(x, -1, 1) + 1) * 128
     return [Image.fromarray(img.astype(np.uint8).transpose(1, 2, 0)) for img in x]  
 
 def output_samples(G, table_size, out_name):
-    z = Variable(np.random.uniform(-1, 1, (table_size**2, nz)).astype(np.float32))
+    z = Variable(G.xp.random.uniform(-1, 1, (table_size**2, nz)).astype(np.float32))
     images = generate_image(G, z)
 
     fig = plt.figure(figsize=(size/10, size/10), dpi=100)

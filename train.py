@@ -15,8 +15,16 @@ from chainer.training import extensions
 
 from net import Generator, Discriminator
 
-nz = 100          # # of dim for Z
-
+# network
+nz  = 100 # of dim for Z
+ngf = 512 # of gen filters in first conv layer
+ndf = 64  # of discrim filters in first conv layer
+nc  = 3   # image channels
+size = 64 # size of output image
+# optimizer
+learning_rate = 1e-4
+beta1 = 0.5
+weight_decay = 1e-5
 
 class Dataset(chainer.datasets.ImageDataset):
     def get_example(self, i):
@@ -52,7 +60,7 @@ class DCGANUpdater(chainer.training.StandardUpdater):
 
 def main():
     parser = argparse.ArgumentParser(description='DCGAN with chainer')
-    parser.add_argument('--batchsize', '-b', type=int, default=100,
+    parser.add_argument('--batchsize', '-b', type=int, default=128,
                         help='Number of images in each mini-batch')
     parser.add_argument('--epoch', '-e', type=int, default=1000,
                         help='Number of sweeps over the dataset to train')
@@ -77,8 +85,8 @@ def main():
         sys.exit('image_dir does not exist.')
 
     # Set up a neural network to train
-    G = Generator(nz)
-    D = Discriminator()
+    G = Generator(ngf, nz, nc, size)
+    D = Discriminator(ndf)
 
     if args.gpu >= 0:
         chainer.cuda.get_device(args.gpu).use()  # Make a specified GPU current
@@ -87,14 +95,15 @@ def main():
     xp = np if args.gpu < 0 else chainer.cuda.cupy
 
     # Setup an optimizer
-    G_optimizer = chainer.optimizers.Adam(alpha=1e-4, beta1=0.5)
-    D_optimizer = chainer.optimizers.Adam(alpha=1e-4, beta1=0.5)
+    G_optimizer = chainer.optimizers.Adam(alpha=learning_rate, beta1=beta1)
+    D_optimizer = chainer.optimizers.Adam(alpha=learning_rate, beta1=beta1)
     G_optimizer.use_cleargrads()
     D_optimizer.use_cleargrads()
     G_optimizer.setup(G)
     D_optimizer.setup(D)
-    G_optimizer.add_hook(chainer.optimizer.WeightDecay(1e-5))
-    D_optimizer.add_hook(chainer.optimizer.WeightDecay(1e-5))
+    if weight_decay:
+        G_optimizer.add_hook(chainer.optimizer.WeightDecay(weight_decay))
+        D_optimizer.add_hook(chainer.optimizer.WeightDecay(weight_decay))
 
     # Init models
     if args.initmodel:

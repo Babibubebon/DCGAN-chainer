@@ -4,22 +4,28 @@ import chainer.links as L
 from chainer import Variable
 
 class Generator(chainer.Chain):
-    def __init__(self, n_in):
+    def __init__(self, ngf, ch_in, ch_out=3, size=64):
+        assert size % 16 == 0, "size must be multiples of 16"
+
+        self.ngf = ngf
+        self.fsize = size >> 4
         initW = chainer.initializers.Normal(0.02)
         super(Generator, self).__init__(
-            l0 = L.Linear(n_in, 4 * 4 * 512),
-            dc1 = L.Deconvolution2D(512, 256, 4, stride=2, pad=1, initialW=initW),
-            bn0 = L.BatchNormalization(4 * 4 * 512),
-            dc2 = L.Deconvolution2D(256, 128, 4, stride=2, pad=1, initialW=initW),
-            bn1 = L.BatchNormalization(256),
-            dc3 = L.Deconvolution2D(128, 64, 4, stride=2, pad=1, initialW=initW),
-            bn2 = L.BatchNormalization(128),
-            dc4 = L.Deconvolution2D(64, 3, 4, stride=2, pad=1, initialW=initW),
-            bn3 = L.BatchNormalization(64),
+            l0  = L.Linear(ch_in, self.fsize ** 2 * ngf),
+            bn0 = L.BatchNormalization(self.fsize ** 2 * ngf),
+            dc1 = L.Deconvolution2D(None, ngf // 2, 4, stride=2, pad=1, initialW=initW),
+            bn1 = L.BatchNormalization(ngf // 2),
+            dc2 = L.Deconvolution2D(None, ngf // 4, 4, stride=2, pad=1, initialW=initW),
+            bn2 = L.BatchNormalization(ngf // 4),
+            dc3 = L.Deconvolution2D(None, ngf // 8, 4, stride=2, pad=1, initialW=initW),
+            bn3 = L.BatchNormalization(ngf // 8),
+            dc4 = L.Deconvolution2D(None,   ch_out, 4, stride=2, pad=1, initialW=initW),
         )
 
     def __call__(self, z, test=False):
-        h = F.reshape(F.relu(self.bn0(self.l0(z), test=test)), (z.data.shape[0], 512, 4, 4))
+        h = F.reshape(
+            F.relu(self.bn0(self.l0(z), test=test)),
+            (z.data.shape[0], self.ngf, self.fsize, self.fsize))
         h = F.relu(self.bn1(self.dc1(h), test=test))
         h = F.relu(self.bn2(self.dc2(h), test=test))
         h = F.relu(self.bn3(self.dc3(h), test=test))
@@ -39,17 +45,17 @@ class Generator(chainer.Chain):
 
 
 class Discriminator(chainer.Chain):
-    def __init__(self):
+    def __init__(self, ndf):
         initW = chainer.initializers.Normal(0.02)
         super(Discriminator, self).__init__(
-            c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, initialW=initW),
-            c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, initialW=initW),
-            bn1 = L.BatchNormalization(128),
-            c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, initialW=initW),
-            bn2 = L.BatchNormalization(256),
-            c3 = L.Convolution2D(256, 512, 4, stride=2, pad=1, initialW=initW),
-            bn3 = L.BatchNormalization(512),
-            fc4 = L.Linear(4 * 4 * 512, 1, initialW=initW)
+            c0  = L.Convolution2D(None,     ndf, 4, stride=2, pad=1, initialW=initW),
+            c1  = L.Convolution2D(None, ndf * 2, 4, stride=2, pad=1, initialW=initW),
+            bn1 = L.BatchNormalization(ndf * 2),
+            c2  = L.Convolution2D(None, ndf * 4, 4, stride=2, pad=1, initialW=initW),
+            bn2 = L.BatchNormalization(ndf * 4),
+            c3  = L.Convolution2D(None, ndf * 8, 4, stride=2, pad=1, initialW=initW),
+            bn3 = L.BatchNormalization(ndf * 8),
+            l4  = L.Linear(None, 1, initialW=initW)
         )
 
     def __call__(self, x, test=False):
@@ -57,7 +63,7 @@ class Discriminator(chainer.Chain):
         h = F.leaky_relu(self.bn1(self.c1(h), test=test))
         h = F.leaky_relu(self.bn2(self.c2(h), test=test))
         h = F.leaky_relu(self.bn3(self.c3(h), test=test))
-        l = self.fc4(h)
+        l = self.l4(h)
         return l
 
     def get_loss_func(self, G):

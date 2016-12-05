@@ -14,6 +14,7 @@ from chainer import training
 from chainer.training import extensions
 
 from net import Generator, Discriminator
+from generate import ext_output_samples
 
 # network
 nz  = 100 # of dim for Z
@@ -124,11 +125,13 @@ def main():
 
     log_interval = (10, 'iteration') if args.test else (1, 'epoch')
 
-    #trainer.extend(extensions.snapshot(), trigger=log_interval)
+    trainer.extend(extensions.snapshot(
+        filename='gen_epoch_{.updater.epoch}'), trigger=log_interval)
     trainer.extend(extensions.snapshot_object(
-        G, 'generator_iter_{.updater.iteration}'), trigger=log_interval)
+        G, 'gen_epoch_{.updater.epoch}'), trigger=log_interval)
     trainer.extend(extensions.snapshot_object(
-        D, 'discriminator_iter_{.updater.iteration}'), trigger=log_interval)
+        D, 'dis_epoch_{.updater.epoch}'), trigger=log_interval)
+    trainer.extend(ext_output_samples(10), trigger=log_interval)
 
     trainer.extend(extensions.LogReport(trigger=log_interval))
     trainer.extend(extensions.PrintReport(

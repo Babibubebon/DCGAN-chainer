@@ -23,11 +23,34 @@ def generate_image(G, vec):
     x = (np.clip(x, -1, 1) + 1) * 128
     return [Image.fromarray(img.astype(np.uint8).transpose(1, 2, 0)) for img in x]  
 
+def output_samples(G, table_size, out_name):
+    z = Variable(np.random.uniform(-1, 1, (table_size**2, nz)).astype(np.float32))
+    images = generate_image(G, z)
+
+    fig = plt.figure(figsize=(size/10, size/10), dpi=100)
+    for i, img in enumerate(images):
+        ax = plt.subplot(table_size, table_size, i + 1)
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        plt.axis('off')
+        plt.imshow(img)
+    fig.subplots_adjust(wspace=0, hspace=0)
+    fig.tight_layout(pad=0)
+    fig.savefig(out_name)
+    plt.close()
+
+def ext_output_samples(table_size, out_name='samples_epoch_{.updater.epoch}.png', trigger=(1, 'epoch')):
+    @chainer.training.make_extension(trigger=trigger)
+    def func(trainer):
+        G = trainer.updater.get_optimizer('generator').target
+        output_samples(G, table_size, os.path.join(trainer.out, out_name.format(trainer)))
+    return func
+
 def main():
     parser = argparse.ArgumentParser(description='DCGAN with chainer')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
-    parser.add_argument('--out', '-o', default='out_image',
+    parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
     parser.add_argument('gen_model',
                         help='Initialize generator from given file')
@@ -48,22 +71,7 @@ def main():
     print('Load model from', args.gen_model)
     serializers.load_npz(args.gen_model, G)
 
-    table_size = 10
-    z = Variable(xp.random.uniform(-1, 1, (table_size**2, nz)).astype(np.float32))
-    images = generate_image(G, z)
-
-    fig = plt.figure(figsize=(size/10, size/10), dpi=100)
-    for i, img in enumerate(images):
-        ax = plt.subplot(table_size, table_size, i + 1)
-        ax.set_xticklabels([])
-        ax.set_yticklabels([])
-        plt.axis('off')
-        plt.imshow(img)
-    fig.subplots_adjust(wspace=0, hspace=0)
-    fig.tight_layout(pad=0)
-
-    plt.savefig(os.path.join(args.out, 'table.png'))
-    plt.show()
+    output_samples(G, 10, os.path.join(args.out, 'table.png'))
 
 if __name__ == "__main__":
     main()

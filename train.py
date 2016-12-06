@@ -39,10 +39,7 @@ class Dataset(chainer.datasets.ImageDataset):
         if rnd == 1:
             # flip
             cimg = cimg[:,:,::-1]
-
-        # normalize
-        cimg = (cimg - 128.0) / 128.0
-        return cimg
+        return (cimg - 128) / 128
 
 class DCGANUpdater(chainer.training.StandardUpdater):
     def update_core(self):
@@ -115,7 +112,7 @@ def main():
     # Load dataset
     files = os.listdir(args.image_dir)
     dataset = Dataset(files, args.image_dir)
-    dataset_iter = chainer.iterators.SerialIterator(dataset, args.batchsize)
+    dataset_iter = chainer.iterators.MultiprocessIterator(dataset, args.batchsize)
     print('# samples: {}'.format(len(dataset)))
 
     # Set up a trainer
@@ -132,13 +129,12 @@ def main():
         G, 'gen' + suffix), trigger=log_interval)
     trainer.extend(extensions.snapshot_object(
         D, 'dis' + suffix), trigger=log_interval)
-    trainer.extend(ext_output_samples(10, 'samples' + suffix), trigger=log_interval)
+    trainer.extend(ext_output_samples(10, 'samples' + suffix, seed=0), trigger=log_interval)
 
     trainer.extend(extensions.LogReport(trigger=log_interval))
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'generator/loss', 'discriminator/loss', 'elapsed_time']), trigger=log_interval)
     trainer.extend(extensions.ProgressBar(update_interval=20))
-    
 
     if args.resume:
         # Resume from a snapshot

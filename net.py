@@ -35,9 +35,9 @@ class Generator(chainer.Chain):
     def get_loss_func(self, D):
         G = self
         def lf(z):
-            p_g = D(G(z))
-            loss = F.sigmoid_cross_entropy(
-                p_g, Variable(self.xp.ones((z.data.shape[0], 1), dtype=self.xp.int32)))
+            p_g = D(G(z), sigmoid=False)
+            loss = F.bernoulli_nll(
+                Variable(self.xp.ones((z.data.shape[0], 1), dtype=self.xp.float32)), p_g)
 
             chainer.report({ 'loss': chainer.cuda.to_cpu(loss.data) }, self)
             return loss
@@ -58,23 +58,29 @@ class Discriminator(chainer.Chain):
             l4  = L.Linear(None, 1, initialW=initW)
         )
 
-    def __call__(self, x, test=False):
+    def __call__(self, x, sigmoid=True, test=False):
         h = F.leaky_relu(self.c0(x))
         h = F.leaky_relu(self.bn1(self.c1(h), test=test))
         h = F.leaky_relu(self.bn2(self.c2(h), test=test))
         h = F.leaky_relu(self.bn3(self.c3(h), test=test))
         l = self.l4(h)
-        return l
+        if sigmoid:
+            return F.sigmoid(l)
+        else:
+            return l
 
     def get_loss_func(self, G):
         D = self
         def lf(x, z):
-            p_real = D(x)
-            p_g = D(G(z))
-            loss = F.sigmoid_cross_entropy(
-                p_real, Variable(self.xp.ones((x.data.shape[0], 1), dtype=self.xp.int32)))
-            loss += F.sigmoid_cross_entropy(
-                p_g,    Variable(self.xp.zeros((z.data.shape[0], 1), dtype=self.xp.int32)))
+            p_real = D(x, sigmoid=False)
+            z.volatile = 'on'
+            x_g = G(z)
+            x_g.volatile = 'off'
+            p_g = D(x_g, sigmoid=False)
+            loss = F.bernoulli_nll(
+                Variable(self.xp.ones((x.data.shape[0], 1), dtype=self.xp.float32)), p_real)
+            loss += F.bernoulli_nll(
+                Variable(self.xp.zeros((z.data.shape[0], 1), dtype=self.xp.float32)), p_g)
             
             chainer.report({ 'loss': chainer.cuda.to_cpu(loss.data) }, self)
             return loss

@@ -23,8 +23,10 @@ ndf = 64  # of discrim filters in first conv layer
 nc  = 3   # image channels
 size = 64 # size of output image
 # optimizer
-learning_rate = 1e-4
+learning_rate = 0.0002
 beta1 = 0.5
+learning_rate_decay = False
+learning_rate_trigger = (1000, 'iteration')
 weight_decay = 1e-5
 
 class Dataset(chainer.datasets.ImageDataset):
@@ -120,7 +122,13 @@ def main():
     updater = DCGANUpdater(dataset_iter, optimizers, device=args.gpu)
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
-    log_interval = (10, 'iteration') if args.test else (1, 'epoch')
+    if learning_rate_decay:
+        trainer.extend(extensions.ExponentialShift(
+            'alpha', learning_rate_decay, optimizer=G_optimizer), trigger=learning_rate_trigger)
+        trainer.extend(extensions.ExponentialShift(
+            'alpha', learning_rate_decay, optimizer=D_optimizer), trigger=learning_rate_trigger)
+
+    log_interval = (100, 'iteration') if args.test else (1, 'epoch')
     suffix = '_{0}_{{.updater.{0}}}'.format(log_interval[1])
 
     trainer.extend(extensions.snapshot(

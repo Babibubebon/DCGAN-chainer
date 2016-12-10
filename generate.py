@@ -24,8 +24,10 @@ def generate_image(G, z):
     return [Image.fromarray(img.astype(np.uint8).transpose(1, 2, 0)) for img in x]  
 
 def output_samples(G, table_size, out_name, seed=None, show=False):
-    G.xp.random.seed(seed)
-    z = Variable(G.xp.random.uniform(-1, 1, (table_size**2, nz)).astype(np.float32))
+    np.random.seed(seed)
+    z = Variable(np.random.uniform(-1, 1, (table_size**2, nz)).astype(np.float32))
+    if G.xp != np:
+        z.to_gpu()
     images = generate_image(G, z)
 
     fig = plt.figure(figsize=(size/10, size/10), dpi=100)

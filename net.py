@@ -11,7 +11,7 @@ class Generator(chainer.Chain):
         self.fsize = size >> 4
         initW = chainer.initializers.Normal(0.02)
         super(Generator, self).__init__(
-            l0  = L.Linear(ch_in, self.fsize ** 2 * ngf),
+            l0  = L.Linear(ch_in, self.fsize ** 2 * ngf, initialW=initW),
             bn0 = L.BatchNormalization(self.fsize ** 2 * ngf),
             dc1 = L.Deconvolution2D(None, ngf // 2, 4, stride=2, pad=1, initialW=initW),
             bn1 = L.BatchNormalization(ngf // 2),
@@ -35,9 +35,11 @@ class Generator(chainer.Chain):
     def get_loss_func(self, D):
         G = self
         def lf(z):
+            batchsize = z.data.shape[0]
+
             p_g = D(G(z), sigmoid=False)
             loss = F.bernoulli_nll(
-                Variable(self.xp.ones((z.data.shape[0], 1), dtype=self.xp.float32)), p_g)
+                Variable(self.xp.ones((batchsize, 1), dtype=self.xp.float32)), p_g) / batchsize
 
             chainer.report({ 'loss': chainer.cuda.to_cpu(loss.data) }, self)
             return loss
@@ -72,15 +74,18 @@ class Discriminator(chainer.Chain):
     def get_loss_func(self, G):
         D = self
         def lf(x, z):
+            batchsize = z.data.shape[0]
+
             p_real = D(x, sigmoid=False)
             z.volatile = 'on'
             x_g = G(z)
             x_g.volatile = 'off'
             p_g = D(x_g, sigmoid=False)
             loss = F.bernoulli_nll(
-                Variable(self.xp.ones((x.data.shape[0], 1), dtype=self.xp.float32)), p_real)
+                Variable(self.xp.ones((batchsize, 1), dtype=self.xp.float32)), p_real)
             loss += F.bernoulli_nll(
-                Variable(self.xp.zeros((z.data.shape[0], 1), dtype=self.xp.float32)), p_g)
+                Variable(self.xp.zeros((batchsize, 1), dtype=self.xp.float32)), p_g)
+            loss /= batchsize
             
             chainer.report({ 'loss': chainer.cuda.to_cpu(loss.data) }, self)
             return loss

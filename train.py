@@ -23,11 +23,15 @@ ndf = 64  # of discrim filters in first conv layer
 nc  = 3   # image channels
 size = 64 # size of output image
 # optimizer
-learning_rate = 0.0002
+learning_rate = 0.001
 beta1 = 0.5
-learning_rate_decay = False
-learning_rate_trigger = (1000, 'iteration')
+lr_decay = {
+    "rate": 0.85,
+    "target": 0.0001,
+    "trigger": (1000, 'iteration')
+}
 weight_decay = 1e-5
+gradient_clipping = 100
 
 class Dataset(chainer.datasets.ImageDataset):
     def get_example(self, i):
@@ -104,6 +108,9 @@ def main():
     if weight_decay:
         G_optimizer.add_hook(chainer.optimizer.WeightDecay(weight_decay))
         D_optimizer.add_hook(chainer.optimizer.WeightDecay(weight_decay))
+    if gradient_clipping:
+        G_optimizer.add_hook(chainer.optimizer.GradientClipping(gradient_clipping))
+        D_optimizer.add_hook(chainer.optimizer.GradientClipping(gradient_clipping))
 
     # Init models
     if args.initmodel:
@@ -122,22 +129,26 @@ def main():
     updater = DCGANUpdater(dataset_iter, optimizers, device=args.gpu)
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
-    if learning_rate_decay:
+    if lr_decay:
         trainer.extend(extensions.ExponentialShift(
-            'alpha', learning_rate_decay, optimizer=G_optimizer), trigger=learning_rate_trigger)
+            'alpha', rate=lr_decay["rate"], target=lr_decay["target"], optimizer=G_optimizer),
+            trigger=lr_decay["trigger"])
         trainer.extend(extensions.ExponentialShift(
-            'alpha', learning_rate_decay, optimizer=D_optimizer), trigger=learning_rate_trigger)
+            'alpha', rate=lr_decay["rate"], target=lr_decay["target"], optimizer=D_optimizer),
+            trigger=lr_decay["trigger"])
 
     log_interval = (100, 'iteration') if args.test else (1, 'epoch')
+    snapshot_interval = (1000, 'iteration') if args.test else (1, 'epoch')
     suffix = '_{0}_{{.updater.{0}}}'.format(log_interval[1])
 
     trainer.extend(extensions.snapshot(
-        filename='snapshot' + suffix), trigger=log_interval)
+        filename='snapshot' + suffix), trigger=snapshot_interval)
     trainer.extend(extensions.snapshot_object(
         G, 'gen' + suffix), trigger=log_interval)
     trainer.extend(extensions.snapshot_object(
         D, 'dis' + suffix), trigger=log_interval)
-    trainer.extend(ext_output_samples(10, 'samples' + suffix, seed=0), trigger=log_interval)
+    trainer.extend(ext_output_samples(
+        10, 'samples' + suffix, seed=0), trigger=log_interval)
 
     trainer.extend(extensions.LogReport(trigger=log_interval))
     trainer.extend(extensions.PrintReport(

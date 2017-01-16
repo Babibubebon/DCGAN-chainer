@@ -12,8 +12,8 @@ from chainer import serializers
 from net import Generator, Discriminator
 
 nz = 100
-ngf = 1024
-ndf = 96
+ngf = 512
+ndf = 64
 nc = 3
 size = 96
 
@@ -69,6 +69,13 @@ def interp_image (G, n, random=np.random):
     images = generate_image(G, z)
     return images
 
+def mean_image(G, n, random=np.random):
+    z = random.uniform(-1, 1, (n, nz)).astype(np.float32)
+    mean = np.array([z.mean(0)])
+    images = generate_image(G, Variable(z))
+    mean_image = generate_image(G, Variable(mean))
+    return images, mean_image
+
 
 def ext_output_samples(
         table_size, out_name='samples_epoch_{.updater.epoch}.png', seed=0, trigger=(1, 'epoch')
@@ -90,9 +97,12 @@ def main():
                         help='Directory to output the result')
     parser.add_argument('--size', '-n', type=int, default=10,
                         help='size of output image table')
+    parser.add_argument('--times', '-n2', type=int, default=1,
+                        help='times of generate image')
     parser.add_argument('--seed', '-s', type=int, default=None,
                         help='random seed')
-    parser.add_argument('--type', '-t', default='random', choices=['random', 'interp', 'similar'],
+    parser.add_argument('--type', '-t', default='random',
+                        choices=['random', 'interp', 'similar', 'mean'],
                         help='generate type')
     parser.add_argument('--quiet', '-q', action='store_true', default=False)
     parser.add_argument('gen_model',
@@ -115,17 +125,21 @@ def main():
 
     np.random.seed(args.seed)
 
-    if args.type == 'random':
-        images = random_image(G, args.size**2)
-    if args.type == 'similar':
-        images = similar_image(G, args.size**2)
-    if args.type == 'interp':
-        images = interp_image(G, args.size)
+    for i in range(args.times):
+        if args.type == 'random':
+            images = random_image(G, args.size**2)
+        if args.type == 'similar':
+            images = similar_image(G, args.size**2)
+        if args.type == 'interp':
+            images = interp_image(G, args.size)
+        if args.type == 'mean':
+            images, mean = mean_image(G, args.size**2)
+            plot(mean, 1, os.path.join(args.out, 'mean_{}.png'.format(i)), show=not args.quiet)
 
-    plot(images,
-        args.size,
-        os.path.join(args.out, '{}.png'.format(args.type)),
-        show=not args.quiet)
+        plot(images,
+            args.size,
+            os.path.join(args.out, '{}_{}.png'.format(args.type, i)),
+            show=not args.quiet)
 
 if __name__ == "__main__":
     main()
